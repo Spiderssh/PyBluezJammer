@@ -4,7 +4,7 @@ import sys
 import os
 import re
 import subprocess
-from android import BluetoothManager, BluetoothDevice, BluetoothStatus
+from Bluetooth import BluetoothManager, BluetoothDevice, BluetoothStatus
 from termux import Bluetooth
 
 # ANSI Color Setup
