@@ -12,8 +12,7 @@ A Bluetooth disruption tool for Kali Linux/Nethunter using built-in adapters.
 
 ## Requirements
 - Kali Linux/Nethunter
-- Root access
-- Bluetooth adapter (`hci0`)
+  `pip install colorama`
 - `bluez` tools (install with `sudo apt install bluez`)
 
 ## Usage
