@@ -30,7 +30,7 @@ A high-impact Bluetooth disruption toolkit optimized for Kali NetHunter, leverag
 ## Installation
 
 ```bash
-git clone https://github.com/nh-bt-assault.git
+git clone https://github.com/Spiderssh/nh-bt-assault.git
 cd nh-bt-assault
 chmod +x nh_bt_jammer.py
 ```
