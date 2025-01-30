@@ -83,16 +83,6 @@ NetHunter BT Menu:
 ✅ Wireless protocol research  
 ✅ Hardware security validation  
 
-**Illegal use is strictly prohibited.** Most countries prohibit unauthorized radio interference under:  
-- FCC Part 15 (USA)  
-- ETSI EN 300 328 (EU)  
-- Radio Law Article 104 (Japan)  
-
-Always:  
-- Use in Faraday-shielded environments  
-- Obtain written testing authorization  
-- Disable immediately after testing  
-
 ## Effectiveness Metrics
 
 | Device Type       | Connection Drop Rate | Average Disruption Time |
